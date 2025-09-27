@@ -11,15 +11,17 @@ import streamlit.components.v1 as components
 class VoiceControlRenderer:
     """Encapsulates the Web Speech API injection logic."""
 
-    PHOTO_HOTWORD = "let me think about this"
-    LISTEN_HOTWORD = "listen"
+    PHOTO_HOTWORD_PREFIX = "let me think about this"
+    PHOTO_PROMPT = "let me think about this {name}"
+    LISTEN_HOTWORD = "i'm listening"
+    LISTEN_PROMPT = "I'm listening"
 
     @classmethod
     def render(cls, enable: bool) -> None:
         enable_flag = str(enable).lower()
         status_color = "#0b8043" if enable else "#5f6368"
         status_text = (
-            f'Say "{cls.LISTEN_HOTWORD}" to capture conversation or "{cls.PHOTO_HOTWORD}" to snap a photo.'
+            f'Say "{cls.LISTEN_PROMPT}" to capture conversation or "{cls.PHOTO_PROMPT}" to snap a photo.'
             if enable
             else "Voice control off."
         )
@@ -32,8 +34,10 @@ class VoiceControlRenderer:
             <script>
             (function() {{
                 const enable = {enable_flag};
-                const photoHotword = "{cls.PHOTO_HOTWORD}";
+                const photoHotwordPrefix = "{cls.PHOTO_HOTWORD_PREFIX}";
+                const photoPrompt = "{cls.PHOTO_PROMPT}";
                 const listenHotword = "{cls.LISTEN_HOTWORD}";
+                const listenPrompt = "{cls.LISTEN_PROMPT}";
                 const statusEl = document.getElementById("auralens-voice-status");
                 const Streamlit = window.parent?.Streamlit || window.Streamlit;
 
@@ -101,27 +105,27 @@ class VoiceControlRenderer:
                     recognition.interimResults = true;
                     recognition.lang = "en-US";
 
-                    const toggleDictation = () => {{
-                        ctrl.dictationActive = !ctrl.dictationActive;
-                        const ts = Date.now();
-                        pushEvent({{ type: 'listening_state', active: ctrl.dictationActive, ts }});
-                        updateStatus(
-                            ctrl.dictationActive
-                                ? 'Dictation on. Speak naturally to capture the last utterance.'
-                                : `Say "${{listenHotword}}" to capture conversation or "${{photoHotword}}" to snap a photo.`,
-                            ctrl.dictationActive ? '#0b8043' : '#1a73e8'
-                        );
-                    }};
+                const toggleDictation = () => {{
+                    ctrl.dictationActive = !ctrl.dictationActive;
+                    const ts = Date.now();
+                    pushEvent({{ type: 'listening_state', active: ctrl.dictationActive, ts }});
+                    updateStatus(
+                        ctrl.dictationActive
+                            ? 'Dictation on. Speak naturally to capture the last utterance.'
+                            : `Say "${{listenPrompt}}" to capture conversation or "${{photoPrompt}}" to snap a photo.`,
+                        ctrl.dictationActive ? '#0b8043' : '#1a73e8'
+                    );
+                }};
 
-                    recognition.onstart = () => {{
-                        if (ctrl.dictationActive) {{
-                            updateStatus('Dictation on. Speak naturally to capture the last utterance.', '#0b8043');
-                        }} else {{
-                            updateStatus(`Say "${{listenHotword}}" to capture conversation or "${{photoHotword}}" to snap a photo.`, '#0b8043');
-                        }}
-                    }};
+                recognition.onstart = () => {{
+                    if (ctrl.dictationActive) {{
+                        updateStatus('Dictation on. Speak naturally to capture the last utterance.', '#0b8043');
+                    }} else {{
+                        updateStatus(`Say "${{listenPrompt}}" to capture conversation or "${{photoPrompt}}" to snap a photo.`, '#0b8043');
+                    }}
+                }};
 
-                    recognition.onerror = (event) => updateStatus(`Voice control error: ${{event.error}}`, '#d93025');
+                recognition.onerror = (event) => updateStatus(`Voice control error: ${{event.error}}`, '#d93025');
 
                     recognition.onend = () => {{
                         if (ctrl.keepAlive) {{
@@ -145,11 +149,21 @@ class VoiceControlRenderer:
                                     continue;
                                 }}
 
-                                if (normalized.includes(photoHotword)) {{
+                                if (normalized.startsWith(photoHotwordPrefix)) {{
                                     const now = Date.now();
                                     if (!ctrl.lastTrigger || now - ctrl.lastTrigger > 2500) {{
                                         ctrl.lastTrigger = now;
                                         updateStatus('Triggering camera…', '#1a73e8');
+                                        const spokenNameRaw = transcriptRaw.slice(photoHotwordPrefix.length).trim();
+                                        const spokenName = spokenNameRaw
+                                            .replace(/^[^\w]+/, '')
+                                            .replace(/[.!?,;:]+$/, '')
+                                            .trim();
+                                        pushEvent({{
+                                            type: 'photo_hotword',
+                                            name: spokenName || null,
+                                            ts: now
+                                        }});
                                         const buttons = doc.querySelectorAll('button');
                                         const target = Array.from(buttons).find(btn => /take photo/i.test(btn.innerText));
                                         if (target) {{
@@ -157,7 +171,7 @@ class VoiceControlRenderer:
                                             setTimeout(() => updateStatus(
                                                 ctrl.dictationActive
                                                     ? 'Dictation on. Speak naturally to capture the last utterance.'
-                                                    : `Say "${{listenHotword}}" to capture conversation or "${{photoHotword}}" to snap a photo.`,
+                                                    : `Say "${{listenPrompt}}" to capture conversation or "${{photoPrompt}}" to snap a photo.`,
                                                 '#0b8043'
                                             ), 1600);
                                         }} else {{

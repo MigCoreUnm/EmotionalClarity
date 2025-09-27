@@ -1,0 +1,18 @@
+[
+  {
+    "name": "Jessica (Partner)",
+    "context": "She's had a very stressful week at work. You're both trying to plan a vacation to Hawaii for next spring. Avoid bringing up the leaky faucet in the bathroom."
+  },
+  {
+    "name": "Mike (Brother)",
+    "context": "He's been interviewing for a new software engineer job and is feeling anxious. Mom's birthday is next Saturday and you still need to coordinate on a gift."
+  },
+  {
+    "name": "Samantha (Best Friend)",
+    "context": "She is getting over a tough breakup from two months ago. You are both in a book club and the next meeting is Tuesday. She recently started volunteering at the animal shelter."
+  },
+  {
+    "name": "David (New Friend)",
+    "context": "You met him at a concert last week. He just moved here from Chicago, works as a graphic designer, and is a huge fan of indie rock. You bonded over the band 'The Lumineers'."
+  }
+]

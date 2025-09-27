@@ -7,6 +7,7 @@ from typing import Optional
 
 from botocore.client import BaseClient
 from twilio.rest import Client as TwilioClient
+from twilio.twiml.voice_response import VoiceResponse
 
 from auralens.config import StorageConfig, TwilioConfig
 
@@ -52,10 +53,13 @@ class CallService:
             ExpiresIn=3600,
         )
 
+        response = VoiceResponse()
+        response.play(presigned_url)
+
         self._twilio_client.calls.create(
             to=destination,
             from_=self._twilio_config.from_number,
-            twiml=f"<Response><Play>{presigned_url}</Play></Response>",
+            twiml=str(response),
         )
 
         return presigned_url

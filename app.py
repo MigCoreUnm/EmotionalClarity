@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+from functools import lru_cache
+from pathlib import Path
 from typing import Any, Dict, Optional
 
 import streamlit as st
@@ -56,6 +58,55 @@ def synthesize_advice_audio(script: str, voice_hint: Optional[str]) -> Dict[str,
 
 
 # ---------------------------------------------------------------------------
+# Notes reference support
+# ---------------------------------------------------------------------------
+
+
+@lru_cache(maxsize=1)
+def load_contact_notes() -> list[dict[str, str]]:
+    notes_path = Path(__file__).with_name("notes.json")
+    try:
+        raw = notes_path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return []
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return []
+    if isinstance(data, list):
+        return [entry for entry in data if isinstance(entry, dict)]
+    return []
+
+
+def _normalise_contact_name(value: str) -> str:
+    return "".join(ch for ch in value.lower() if ch.isalnum() or ch.isspace()).strip()
+
+
+def resolve_contact_note(spoken_name: str) -> Optional[dict[str, str]]:
+    target = _normalise_contact_name(spoken_name)
+    if not target:
+        return None
+
+    for entry in load_contact_notes():
+        name = entry.get("name")
+        context = entry.get("context")
+        if not isinstance(name, str) or not isinstance(context, str):
+            continue
+
+        variants = {_normalise_contact_name(name)}
+        if "(" in name:
+            variants.add(_normalise_contact_name(name.split("(", 1)[0]))
+
+        for variant in variants:
+            if not variant:
+                continue
+            if target == variant or target in variant or variant in target:
+                return {"name": name, "context": context}
+
+    return None
+
+
+# ---------------------------------------------------------------------------
 # Session state bootstrapping
 # ---------------------------------------------------------------------------
 
@@ -82,6 +133,9 @@ def bootstrap_session_state() -> ServiceContainer:
     st.session_state.setdefault("tts_voice_id", config.elevenlabs.default_voice)
     st.session_state.setdefault("call_enabled", False)
     st.session_state.setdefault("call_phone_number", config.twilio.default_to_number or "")
+    st.session_state.setdefault("active_contact_note", None)
+    st.session_state.setdefault("active_contact_note_feedback", None)
+    st.session_state.setdefault("active_contact_spoken_name", "")
 
     return services
 
@@ -115,8 +169,20 @@ def main() -> None:
     with st.sidebar:
         st.header("Voice & Capture")
         voice_enabled = st.checkbox("Enable voice assistant", value=False)
-        st.caption('Say "listen" to toggle dictation or "let me think about this" to trigger the camera.')
+        st.caption('Say "I\'m listening" to toggle dictation or "let me think about this {name}" to trigger the camera.')
         voice_event = VoiceControlRenderer.render(voice_enabled)
+
+        st.divider()
+        st.header("Relationship Notes")
+        active_note = st.session_state.get("active_contact_note")
+        note_feedback = st.session_state.get("active_contact_note_feedback")
+        if active_note:
+            st.markdown(f"**{active_note.get('name', 'Unknown contact')}**")
+            st.write(active_note.get("context", ""))
+        elif note_feedback:
+            st.caption(note_feedback)
+        else:
+            st.caption('Include a name after "let me think about this" to surface saved notes.')
 
         st.divider()
         st.header("Audio Coach")
@@ -280,6 +346,20 @@ def process_voice_event(payload: Any) -> None:
         utterances = st.session_state.setdefault("utterances", [])
         utterances.append({"ts": event_ts, "text": text, "tone": detect_utterance_tone(text)})
         st.session_state["utterances"] = utterances[-50:]
+    elif event_type == "photo_hotword":
+        spoken_name = (payload.get("name") or "").strip()
+        st.session_state["active_contact_spoken_name"] = spoken_name
+        if spoken_name:
+            note = resolve_contact_note(spoken_name)
+            if note:
+                st.session_state["active_contact_note"] = note
+                st.session_state["active_contact_note_feedback"] = None
+            else:
+                st.session_state["active_contact_note"] = None
+                st.session_state["active_contact_note_feedback"] = f"No saved notes found for \"{spoken_name}\"."
+        else:
+            st.session_state["active_contact_note"] = None
+            st.session_state["active_contact_note_feedback"] = "No name detected in the voice command."
 
 
 if __name__ == "__main__":
